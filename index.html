@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>anti-watermark</title>
+  <meta name="description" content="Minimal black & white watermark removal utility for video and image.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="ui-root">
+    <!-- Header -->
+    <header class="ui-header">
+      <div class="header-left">
+        <span class="app-title">anti-watermark</span>
+        <span class="system-status">[ENGINE_ACTIVE]</span>
+      </div>
+      <div class="header-right">
+        <span class="meta-indicator" id="resolutionTag">100% SCALE</span>
+        <button id="btnNewUpload" class="btn btn-outline" style="display:none;">[NEW_FILE]</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="ui-main">
+      <!-- Upload Dropzone (Initial state) -->
+      <section id="uploadSection" class="upload-container">
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-symbol">+</div>
+          <h2 class="drop-heading">DRAG AND DROP MEDIA</h2>
+          <p class="drop-subtext">VIDEO (MP4, WEBM, MOV, MKV, AVI) / IMAGE (PNG, JPG, WEBP)</p>
+          <div class="drop-actions">
+            <label class="btn btn-solid">
+              <input type="file" id="fileInput" accept="video/*,image/*" hidden>
+              <span>BROWSE_FILE</span>
+            </label>
+            <button class="btn btn-outline" id="btnLoadDemo">LOAD_DEMO</button>
+          </div>
+          <div class="format-list">
+            TARGETS: CORNER MARKS / LOGOS / TIMESTAMPS / SUBTITLES / FULL FRAME
+          </div>
+        </div>
+      </section>
+
+      <!-- Editor Studio (Active state) -->
+      <section id="editorSection" class="editor-container hidden">
+        <!-- Viewport Area -->
+        <div class="viewport-panel">
+          <div class="viewport-bar">
+            <div class="tool-strip">
+              <button class="tool-btn active" id="toolBox">[BOX]</button>
+              <button class="tool-btn" id="toolBrush">[BRUSH]</button>
+              <button class="tool-btn" id="toolEraser">[ERASE]</button>
+              <div class="brush-size-wrap" id="brushSizeControl" style="display:none;">
+                <span class="param-label">SIZE:</span>
+                <input type="range" id="brushSize" min="4" max="80" value="20" class="tech-slider">
+                <span id="brushSizeVal" class="param-val">20PX</span>
+              </div>
+            </div>
+            <div class="tool-strip right">
+              <span class="coord-monitor" id="coordMonitor">X: 0000 | Y: 0000</span>
+              <button class="btn btn-sm btn-outline" id="btnAutoDetect">[AUTO_DETECT]</button>
+              <button class="btn btn-sm btn-ghost" id="btnClearRegions">[CLEAR]</button>
+            </div>
+          </div>
+
+          <!-- Canvas Stage -->
+          <div class="canvas-stage" id="canvasStage">
+            <video id="mediaVideo" playsinline crossorigin="anonymous" class="hidden-media"></video>
+            <canvas id="mediaCanvas"></canvas>
+            <canvas id="maskCanvas"></canvas>
+
+            <!-- Comparison Split Overlay -->
+            <div id="compareOverlay" class="compare-overlay hidden">
+              <div class="compare-slider-line" id="compareSliderLine">
+                <div class="compare-cursor-tag">[SPLIT]</div>
+              </div>
+              <span class="compare-tag tag-before">[ORIGINAL]</span>
+              <span class="compare-tag tag-after">[CLEANED]</span>
+            </div>
+          </div>
+
+          <!-- Video Timeline (Videos only) -->
+          <div class="timeline-bar" id="timelineControls">
+            <button class="timeline-btn" id="btnPlayPause">[PLAY]</button>
+            <span class="time-display" id="currentTimeLabel">00:00.00</span>
+            <input type="range" class="tech-slider flex-1" id="timelineSlider" min="0" max="100" value="0" step="0.05">
+            <span class="time-display" id="durationLabel">00:00.00</span>
+            <button class="timeline-btn" id="btnStepBack">[-1F]</button>
+            <button class="timeline-btn" id="btnStepForward">[+1F]</button>
+          </div>
+        </div>
+
+        <!-- Controls Sidebar -->
+        <aside class="control-sidebar">
+          <!-- Presets -->
+          <div class="sidebar-section">
+            <div class="section-title">PRESETS</div>
+            <div class="preset-matrix">
+              <button class="preset-btn" data-preset="gemini">BOTTOM_RIGHT_LOGO</button>
+              <button class="preset-btn" data-preset="bottom_left">BOTTOM_LEFT_LOGO</button>
+              <button class="preset-btn" data-preset="top_right">TOP_RIGHT_LOGO</button>
+              <button class="preset-btn" data-preset="top_left">TOP_LEFT_LOGO</button>
+              <button class="preset-btn" data-preset="bottom_center">SUBTITLE_BAR</button>
+              <button class="preset-btn" data-preset="center">CENTER_MARK</button>
+            </div>
+          </div>
+
+          <!-- Region Inventory -->
+          <div class="sidebar-section">
+            <div class="section-header-row">
+              <span class="section-title">REGIONS</span>
+              <span class="tag-counter" id="regionCountBadge">0 SELECTED</span>
+            </div>
+            <div class="regions-registry" id="regionsList">
+              <div class="empty-registry-msg">NO REGION SELECTED. DRAG ON MEDIA OR CLICK PRESET.</div>
+            </div>
+          </div>
+
+          <!-- Engine Parameters -->
+          <div class="sidebar-section">
+            <div class="section-title">ENGINE CONFIG</div>
+            <div class="param-row">
+              <label for="selectMethod" class="param-label">METHOD</label>
+              <select id="selectMethod" class="tech-select">
+                <option value="ns" selected>NAVIER-STOKES (ZERO REFLECTION)</option>
+                <option value="telea">FAST MARCHING (TELEA)</option>
+              </select>
+            </div>
+
+            <div class="param-row">
+              <div class="flex-between">
+                <label for="inputRadius" class="param-label">RADIUS</label>
+                <span id="radiusVal" class="param-val">2PX</span>
+              </div>
+              <input type="range" id="inputRadius" min="1" max="10" value="2" class="tech-slider w-full">
+            </div>
+
+            <div class="param-row check-row">
+              <input type="checkbox" id="checkRefine" checked>
+              <label for="checkRefine" class="check-label">ANTI-REFLECTION CONTOUR MASKING</label>
+            </div>
+
+            <div class="param-row">
+              <div class="flex-between">
+                <span class="param-label">EXPORT RESOLUTION</span>
+                <span class="param-val" id="exportResolutionLabel">ORIGINAL</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Execution Actions -->
+          <div class="sidebar-actions">
+            <button class="btn btn-outline w-full" id="btnPreviewFrame">[PREVIEW_FRAME]</button>
+            <button class="btn btn-solid w-full" id="btnProcessExport">[EXPORT_ORIGINAL_SIZE]</button>
+          </div>
+
+          <!-- Processing Status / Download -->
+          <div class="status-panel hidden" id="progressContainer">
+            <div class="progress-track">
+              <div class="progress-bar" id="progressBarFill"></div>
+            </div>
+            <div class="status-info">
+              <span id="progressText">PROCESSING...</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div id="exportReadyArea" class="ready-block hidden">
+              <a href="#" class="btn btn-solid w-full" id="btnDownloadClean">[DOWNLOAD_ORIGINAL_SCALE]</a>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="ui-footer">
+      <span class="footer-item">ANTI-WATERMARK // ZERO-REFLECTION ENGINE</span>
+      <span class="footer-item" id="footerFileMeta">STANDBY</span>
+      <span class="footer-item">EXPORT: 1:1 RESOLUTION</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
