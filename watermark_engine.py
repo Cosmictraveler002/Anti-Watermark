@@ -35,7 +35,7 @@ PRESETS = {
     "top_right": lambda w, h: (int(w * 0.78), int(h * 0.02), int(w * 0.20), int(h * 0.10)),
     "top_left": lambda w, h: (int(w * 0.02), int(h * 0.02), int(w * 0.20), int(h * 0.10)),
     "seedance": lambda w, h: (int(w * 0.75), int(h * 0.90), int(w * 0.23), int(h * 0.08)),
-    "gemini": lambda w, h: (int(w * 0.88), int(h * 0.86), int(w * 0.10), int(h * 0.11)),
+    "gemini": lambda w, h: (int(w * 0.86), int(h * 0.76), int(w * 0.12), int(h * 0.20)),
     "tiktok": lambda w, h: (int(w * 0.75), int(h * 0.03), int(w * 0.22), int(h * 0.08)),
     "bottom_center": lambda w, h: (int(w * 0.20), int(h * 0.90), int(w * 0.60), int(h * 0.08)),
     "center": lambda w, h: (int(w * 0.25), int(h * 0.40), int(w * 0.50), int(h * 0.20)),
@@ -181,9 +181,8 @@ def auto_detect_temporal_watermark(frames: List[np.ndarray], width: int, height:
 
 
 def auto_detect_gemini_sparkle(frame: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
-    """Detects 4-point sparkle logo geometry typical of Gemini AI watermarks."""
+    """Detects 4-point sparkle logo geometry typical of Gemini AI watermarks across brightness levels."""
     h, w = frame.shape[:2]
-    # Check bottom-right and bottom-left quadrants
     rois = [
         (int(w * 0.70), int(h * 0.70), int(w * 0.30), int(h * 0.30)),
         (0, int(h * 0.70), int(w * 0.30), int(h * 0.30)),
@@ -192,27 +191,28 @@ def auto_detect_gemini_sparkle(frame: np.ndarray) -> Optional[Tuple[int, int, in
     for rx, ry, rw, rh in rois:
         crop = frame[ry : ry + rh, rx : rx + rw]
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        # Threshold for bright logo strokes
-        _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Test bright, medium, and dark scene thresholds
+        for thresh_val in [200, 100, 45, 30]:
+            _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        for cnt in contours:
-            bx, by, bw, bh = cv2.boundingRect(cnt)
-            if 15 <= bw <= 120 and 15 <= bh <= 120 and 0.6 <= bw / float(bh) <= 1.5:
-                # Shape score against sparkle template
-                crop_mask = binary[by : by + bh, bx : bx + bw]
-                resized = cv2.resize(crop_mask, (64, 64), interpolation=cv2.INTER_AREA)
-                intersection = np.logical_and(resized > 0, SPARKLE_TEMPLATE > 0).sum()
-                union = np.logical_or(resized > 0, SPARKLE_TEMPLATE > 0).sum()
-                iou = intersection / max(1, union)
-                if iou > 0.35:
-                    pad = 6
-                    return (
-                        max(0, rx + bx - pad),
-                        max(0, ry + by - pad),
-                        min(w, bw + pad * 2),
-                        min(h, bh + pad * 2),
-                    )
+            for cnt in contours:
+                bx, by, bw, bh = cv2.boundingRect(cnt)
+                if 20 <= bw <= 140 and 20 <= bh <= 140 and 0.65 <= bw / float(bh) <= 1.45:
+                    crop_mask = binary[by : by + bh, bx : bx + bw]
+                    resized = cv2.resize(crop_mask, (64, 64), interpolation=cv2.INTER_AREA)
+                    intersection = np.logical_and(resized > 0, SPARKLE_TEMPLATE > 0).sum()
+                    union = np.logical_or(resized > 0, SPARKLE_TEMPLATE > 0).sum()
+                    iou = intersection / max(1, union)
+                    if iou > 0.32:
+                        pad = 8
+                        return (
+                            max(0, rx + bx - pad),
+                            max(0, ry + by - pad),
+                            min(w, bw + pad * 2),
+                            min(h, bh + pad * 2),
+                        )
 
     return None
 
@@ -241,13 +241,13 @@ def extract_anti_reflection_mask(
     grad = np.sqrt(sobelx**2 + sobely**2)
     grad = np.uint8(np.clip(grad / (grad.max() + 1e-4) * 255, 0, 255))
 
-    # 2. Thresholding for bright/distinct logo strokes
-    thresh_val = int(55 + (1.0 - sensitivity) * 50)
+    # 2. Multi-thresholding for both dark and bright watermark strokes
+    thresh_val = int(25 + (1.0 - sensitivity) * 50)
     _, binary_bright = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
-    _, binary_grad = cv2.threshold(grad, 40, 255, cv2.THRESH_BINARY)
+    _, binary_grad = cv2.threshold(grad, 25, 255, cv2.THRESH_BINARY)
     combined = cv2.bitwise_or(binary_bright, binary_grad)
 
-    # 3. Contour analysis to isolate the watermark object from background or border elements
+    # 3. Contour analysis to isolate the watermark object
     contours, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     logo_roi_mask = np.zeros_like(gray)
 
@@ -256,16 +256,15 @@ def extract_anti_reflection_mask(
     box_area = rw * rh
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < 30 or area > (box_area * 0.85):
+        if area < 25 or area > (box_area * 0.90):
             continue
         valid_contours.append(cnt)
 
     if valid_contours:
-        # Draw isolated watermark contours
         cv2.drawContours(logo_roi_mask, valid_contours, -1, 255, thickness=cv2.FILLED)
-        # Dilate slightly (3px ellipse) to cleanly capture anti-aliased edge boundaries
+        # Dilate by 4-5px with ellipse to cleanly encompass all anti-aliased outer edges and drop shadows
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        logo_roi_mask = cv2.dilate(logo_roi_mask, kernel, iterations=1)
+        logo_roi_mask = cv2.dilate(logo_roi_mask, kernel, iterations=2)
         mask[ry : ry + rh, rx : rx + rw] = logo_roi_mask
     else:
         # Safe fallback: centered diamond/ellipse (covers center 70% instead of raw full rectangle)
@@ -411,15 +410,28 @@ def process_video(
         regions = [PRESETS[preset](width, height)]
 
     # Auto-detection if no region provided
+    first_frame = None
     if not regions and custom_mask is None:
         samples, _, _, _, _ = sample_video_frames(input_path, max_samples=20)
-        detected = auto_detect_temporal_watermark(samples, width, height)
-        if detected:
-            regions = [detected]
-        else:
-            regions = [PRESETS["bottom_right"](width, height)]
+        if samples:
+            first_frame = samples[0]
+            # Try sparkle auto-detection first
+            for s in samples:
+                sp_box = auto_detect_gemini_sparkle(s)
+                if sp_box:
+                    regions = [sp_box]
+                    break
+        if not regions:
+            detected = auto_detect_temporal_watermark(samples, width, height)
+            if detected:
+                regions = [detected]
+            else:
+                regions = [PRESETS["bottom_right"](width, height)]
+    elif regions and first_frame is None:
+        ret_peek, first_frame = cap.read()
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-    mask = create_inpaint_mask((height, width), regions, custom_mask)
+    mask = create_inpaint_mask((height, width), regions, custom_mask, frame=first_frame, use_refinement=refine)
 
     # Use a temporary directory for intermediate video
     temp_dir = tempfile.mkdtemp(prefix="omnimark_")

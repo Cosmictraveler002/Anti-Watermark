@@ -39,7 +39,7 @@ def print_progress(fraction: float, current: int, total: int):
     pct = int(fraction * 100)
     bar_len = 30
     filled = int(bar_len * fraction)
-    bar = "█" * filled + "-" * (bar_len - filled)
+    bar = "=" * filled + "-" * (bar_len - filled)
     sys.stdout.write(f"\r[{bar}] {pct}% ({current}/{total} frames)")
     sys.stdout.flush()
     if current >= total:

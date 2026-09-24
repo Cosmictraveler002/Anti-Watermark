@@ -1,0 +1,12 @@
+Project/
+__pycache__/
+*.pyc
+*.mp4
+uploads/
+outputs/
+.git/
+push_to_github.bat
+clean_hero_video.py
+process_project.py
+refine_mask.py
+test_engine.py
